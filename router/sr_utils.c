@@ -183,3 +183,13 @@ void print_hdrs(uint8_t *buf, uint32_t length) {
   }
 }
 
+//Helper function: give individual portions of an ip address, return the uint32 representation of it
+uint32_t IPtoUint32(int seq1, int seq2, int seq3, int seq4) {
+    uint32_t result = 0;
+    result = seq1 << 24;
+    result = result | (seq2<<16);
+    result = result | (seq3<<8);
+    result = result | (seq4);
+
+    return result;
+}
