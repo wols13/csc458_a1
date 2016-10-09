@@ -90,89 +90,105 @@ void sr_handlepacket(struct sr_instance* sr,
 
   /* fill in code here */
   //Check len meets minimum size
-  if (len < sizeof(struct sr_ethernet_hdr)) {
-    //Send ICMP reply to sender of type 12 code 2 (Bad length)
-    //exit
+  if (len < sizeof(struct sr_ethernet_hdr) ){
+	//Send ICMP reply to sender of type 12 code 2 (Bad length)
+	fprintf(stderr , "** Error: packet is wayy to short \n");
+    return -1;
   }
 
   //Extract ethernet header
   ether_hdr = (struct sr_ethernet_hdr*)packet;
 
-  //Extract IP header
-  ip_hdr = packet + sizeof(struct sr_ether_hdr);
-
-  //validate checksum
-  // TO DO: Store checksum in new variable
-  tempChecksum = ip_hdr->ip_sum;
-  ip_hdr->ip_sum = 0;
-  if (tempChecksum != cksum(ip_hdr, ip_hdr->ip_len)) {
-    //Send ICMP reply to sender of type _ code _
-    //exit
+  //Need to check if it contains an ARP or IP packet
+  //if (ether_hdr->ether_type == ethertype_ip) {
+  
+  if (ether_hdr->ether_type == ethertype_arp) {
+		hand_arpIncomingMessage(packet, sr);
+		return 0;
   }
+  
+	//Extract IP header
+	ip_hdr = packet + sizeof(struct sr_ether_hdr);
 
-  //Check if TTL = 0 and handle
-  if (ip_hdr->ip_ttl < 1) {
-    //Send ICMP reply to sender type 11 code 0
-    //exit
-  }
+	//Check IP packet+header size meets minimum size
+	if (len - sizeof(struct sr_ethernet_hdr) < sizeof(struct sr_ip_hdr) ){
+		//Send ICMP reply to sender of type 12 code 2 (Bad length)
+		fprintf(stderr , "** Error: IP packet is wayy to short \n");
+		return -1;
+	}
 
-  //Decrement TTL
-  (ip_hdr->ip_ttl)--;
+	//validate checksum
+	tempChecksum = ip_hdr->ip_sum;
+	ip_hdr->ip_sum = 0;
+	if (tempChecksum != cksum(ip_hdr, ip_hdr->ip_len)) {
+		//Send ICMP reply to sender of type _ code _
+		fprintf(stderr , "** Error: checksum mismatch \n");
+		return -1;
+	}
 
-  //See if dest ip is one of our interfaces.  If it does, send it out through that interface
-  currInterface = sr->if_list;
-  while (currInterface != NULL) {
-    //This checks if the interface ip is the same as the dest ip in the packet header
-    if (currInterface->ip == ip_hdr->ip_dst) {
-        //Send it through that interface
-        //exit
-    }
-    currInterface = currInterface->next;
-  }
+	//Decrement TTL
+	(ip_hdr->ip_ttl)--;
 
-  //Otherwise find longest prefix match (through routing table) and send it there
-  // Router struct has a pointer to first routing table entry.  Each router table entry has a pointer
-  // to the next (it's a linked list).  We can compare the ip packet's destination to each entry
-  //Until we hit next is NULL
+	//Check if TTL = 0 and handle
+	if (ip_hdr->ip_ttl < 1) {
+		//Send ICMP reply to sender type 11 code 0
+		fprintf(stderr , "** Packet's TTL is 0 \n");
+		return -1;
+	}
+
+	//Recalculate checksum here
+	tempChecksum = cksum(ip_hdr, ip_hdr->ip_len);
+	ip_hdr->ip_sum = tempChecksum;
+
+	//See if dest ip is one of our interfaces.  If it does, send it out through that interface
+	currInterface = sr->if_list;
+	while (currInterface != NULL) {
+		//This checks if the interface ip is the same as the dest ip in the packet header
+		if (currInterface->ip == ip_hdr->ip_dst) {
+			//Send it through that interface
+			//exit
+		}
+		currInterface = currInterface->next;
+	}
+
+	//Otherwise find longest prefix match (through routing table) and send it there
+	// Router struct has a pointer to first routing table entry.  Each router table entry has a pointer
+	// to the next (it's a linked list).  We can compare the ip packet's destination to each entry
+	//Until we hit next is NULL
 
 
-    if ((ip_hdr->ip_dst >> 24) == 192) {
-        //forward packet to eth1
-        nexthopIP = IPtoUint32(192, 168, 2, 2);
-        nextiface = "eth1";
-    } else if  ((ip_hdr->ip_dst >> 24) == 172){
-        //forward packet to eth2
-        nexthopIP = IPtoUint32(172, 64, 3, 10);
-        nextiface = "eth2";
-    } else if  ((ip_hdr->ip_dst >> 24) == 10){
-        //forward packet to eth3
-        nexthopIP = IPtoUint32(10, 0, 1, 100);
-        nextiface = "eth0";
-    } else {
-        //exit
-    }
+	if ((ip_hdr->ip_dst >> 24) == 192) {
+		//forward packet to eth1
+		nexthopIP = IPtoUint32(192, 168, 2, 2);
+		nextiface = "eth1";
+	} else if  ((ip_hdr->ip_dst >> 24) == 172){
+		//forward packet to eth2
+		nexthopIP = IPtoUint32(172, 64, 3, 10);
+		nextiface = "eth2";
+	} else if  ((ip_hdr->ip_dst >> 24) == 10){
+		//forward packet to eth3
+		nexthopIP = IPtoUint32(10, 0, 1, 100);
+		nextiface = "eth0";
+	} else {
+		//exit
+	}
 
-    //Recalculate checksum here
-    tempChecksum = cksum(ip_hdr, ip_hdr->ip_len);
-    ip_hdr->ip_sum = tempChecksum;
+	ARPentry = sr_arpcache_lookup(&(sr->cache), nexthopIP);
+	//MAC Address = ARPentry->mac;
+	if (ARPentry != NULL) {
+		//send it
+		//free(ARPentry); potentially relink
+	} else {
+		//Add a ARP request onto the ARP request queue
+		ARPreq = sr_arpcache_queuereq(&(sr->cache),
+							 nexthopIP,
+							 packet,
+							 len,
+							 nextiface);
+		//Write and call handle_arpreq
+		handle_arpreq(&(sr->cache), ARPreq);
 
-    ARPentry = sr_arpcache_lookup(&(sr->cache), nexthopIP);
-    //MAC Address = ARPentry->mac;
-    if (ARPentry != NULL) {
-        //send it
-    } else {
-        //Add a ARP request onto the ARP request queue
-        ARPreq = sr_arpcache_queuereq(&(sr->cache),
-                             nexthopIP,
-                             packet,
-                             len,
-                             nextiface);
-        //Write and call handle_arpreq
-        handle_arpreq(ARPreq);
-
-    }
-
-  //Will need to use sr_ether_addrs_match_interface( to check MAC address
+	}
 
 
 }/* end sr_ForwardPacket */

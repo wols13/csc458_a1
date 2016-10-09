@@ -11,6 +11,69 @@
 #include "sr_if.h"
 #include "sr_protocol.h"
 
+/* 	Function that handles incoming ARP messages
+ * 	Depending on whether it's a reply or a request, handle it differently.
+ */
+ 
+void hand_arpIncomingMessage(struct sr_packet *packet, struct sr_instance *sr) {
+	//NOTE TO USE THE ETHERNET PROTOCOL ENUM FOR ARP messages AND also in ARP header to denote it's an ARP reply	
+	//Extract ARP header
+	arp_hdr = packet + sizeof(struct sr_ether_hdr);
+		
+	//Check to see if reply or request
+	if (arp_hdr->ar_op == arp_op_reply) {
+		req = arpcache_insert(&(sr->cache), arp_hdr->arp_sha, arp_hdr->ar_sip); //Sender's ip and mac
+		if (req){ 
+			//forward all packets from the req's queue on to that destination
+			//send messages (req->packets) until end of linked list
+			arpreq_destroy(&(sr->cache), req);
+		}
+	} else {
+		//Create ARP reply packet (encapsulate in ethernet frame) and send to source of ARP request
+	}
+}
+
+
+
+
+/*	Function that handles sending ARP requests if necessary
+
+	function handle_arpreq(req):
+       		if difftime(now, req->sent) > 1.0
+	           if req->times_sent >= 5:
+               send icmp host unreachable to source addr of all pkts waiting
+                 on this request
+               arpreq_destroy(req)
+           else:
+               send arp request
+               req->sent = now
+               req->times_sent++
+*/
+void handle_arpreq(struct sr_arpcache *cache, struct sr_arpreq* req){
+	struct sr_packet *packet;
+	time_t now;
+	now = time(NULL);
+	if (difftime(now, req->sent) > 1.0) {
+		if (req->times_sent >= 5) {
+			//Send ICMP type 3 code 1 to each packet in the request
+			packet = req->packets;			
+			while (packets != NULL) {
+				//send ICMP host unreachable type 3 code 1 to source addresses of all packets waiting on this request
+				packet = packet->next;
+			}
+			//Destroy the request afterwards
+			sr_arpreq_destroy(cache, req);
+		} else {
+			//send ARP request
+			//NOTE!!!!!!!!!!!!!!!!!! Ethernet frame can contain either IP OR ARP packets
+			now = time(NULL);
+			req->sent = now;
+			req->times_sent++;
+		}
+	}
+}
+
+
 /*
   This function gets called every second. For each request sent out, we keep
   checking whether we should resend an request or destroy the arp request.
@@ -19,6 +82,15 @@
 void sr_arpcache_sweepreqs(struct sr_instance *sr) {
     /* Fill this in */
     //Requests are stored as a link list
+    struct sr_arpcache *ARPcache = &(sr->cache);
+    struct sr_arpreq *currReq = ARPcache->requests;
+    while (currReq != NULL) {
+		//Save next request pointer in case handle req destroys currReq
+		nextReq = currReq->next;
+		handle_arpreq(ARPcache, currReq);
+		currReq = nextReq;
+	}
+    
 }
 
 /* You should not need to touch the rest of this code. */
