@@ -15,8 +15,10 @@
  * 	Depending on whether it's a reply or a request, handle it differently.
  */
  
-void hand_arpIncomingMessage(struct sr_packet *packet, struct sr_instance *sr) {
+void handle_arpIncomingMessage(uint8_t *packet, struct sr_instance *sr, unsigned int len) {
 	//NOTE TO USE THE ETHERNET PROTOCOL ENUM FOR ARP messages AND also in ARP header to denote it's an ARP reply	
+	struct sr_if *currIface;
+	struct sr_packet *pendingPkt;
 	//Extract ARP header
 	arp_hdr = packet + sizeof(struct sr_ether_hdr);
 		
@@ -24,12 +26,40 @@ void hand_arpIncomingMessage(struct sr_packet *packet, struct sr_instance *sr) {
 	if (arp_hdr->ar_op == arp_op_reply) {
 		req = arpcache_insert(&(sr->cache), arp_hdr->arp_sha, arp_hdr->ar_sip); //Sender's ip and mac
 		if (req){ 
+			pendingPkt = req->packets;
 			//forward all packets from the req's queue on to that destination
-			//send messages (req->packets) until end of linked list
+			while (pendingPkt != NULL) {
+				//CHECK: that it sends (FOR DEBUG PURPOSES)
+				sr_send_packet(sr, pendingPkt->buf, pendingPkt->len, pendingPkt->currIface);
+				pendingPkt = pendingPkt->next;
+			}
+			
 			arpreq_destroy(&(sr->cache), req);
 		}
 	} else {
-		//Create ARP reply packet (encapsulate in ethernet frame) and send to source of ARP request
+		//Go through linked list of interfaces, check their IP vs the destination IP of the ARP request packet
+		currIface = sr->if_list;
+		while (currIface != NULL) {
+			//Check if packet is intended for us
+			if (currIface->ip == arp_hdr->tip) {
+				//Create ARP reply packet (encapsulate in ethernet frame) and send to source of ARP request
+				struct sr_ethernet_hdr* ether_hdr = (struct sr_ethernet_hdr*)packet;
+				//The recipient MAC address will be the original sender's
+				ether_hdr->dhost = ether_hdr->shost;
+				//The sending MAC address will be the interface's
+				ether_hdr->shost = currIface->addr;
+				arp_hdr->ar_op = arp_op_reply;
+				arp_hdr->ar_tip = arp_hdr->ar_sip;
+				arp_hdr->ar_sip = currIface->ip;
+				arp_hdr->ar_tha = arp_hdr->ar_sha;
+				arp_hdr->ar_sha = currIface->addr;
+				
+				sr_send_packet(sr, packet, len, currIface);
+				break;
+			}
+			currIface = currIface->next;
+		}
+		
 	}
 }
 
@@ -49,26 +79,54 @@ void hand_arpIncomingMessage(struct sr_packet *packet, struct sr_instance *sr) {
                req->sent = now
                req->times_sent++
 */
-void handle_arpreq(struct sr_arpcache *cache, struct sr_arpreq* req){
+void handle_arpreq(struct sr_instance *sr, struct sr_arpreq* req, uint32_t target_ip){
+	struct sr_arpcache *cache = &(sr->cache);
 	struct sr_packet *packet;
+	struct sr_if *currIface;
 	time_t now;
 	now = time(NULL);
 	if (difftime(now, req->sent) > 1.0) {
 		if (req->times_sent >= 5) {
-			//Send ICMP type 3 code 1 to each packet in the request
 			packet = req->packets;			
 			while (packets != NULL) {
-				//send ICMP host unreachable type 3 code 1 to source addresses of all packets waiting on this request
+				//TODO: send ICMP host unreachable type 3 code 1 to source addresses of all packets waiting on this request
 				packet = packet->next;
 			}
 			//Destroy the request afterwards
 			sr_arpreq_destroy(cache, req);
 		} else {
-			//send ARP request
-			//NOTE!!!!!!!!!!!!!!!!!! Ethernet frame can contain either IP OR ARP packets
+			//BROADCAST ARP request
+			uint8_t* broadcast_packet = malloc(sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr));
+			unsigned int new_pkt_len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr);
+			struct sr_ethernet_hdr* new_ether_hdr = (struct sr_ethernet_hdr*)broadcast_packet;
+			struct sr_arp_hdr* new_arp_hdr = (struct sr_arp_hdr*)(broadcast_packet + sizeof(struct sr_ethernet_hdr));
+			new_ether_hdr->ether_dhost = 0xffffffffffff; //TODO: check to see if there is a predefined constant
+			new_ether_hdr->type = ethertype_arp;
+			
+			currIface = sr->if_list;
+			
+			new_arp_hdr->ar_hrd = arp_hrd_ethernet;
+			new_arp_hdr->ar_pro = ethertype_ip;
+			new_arp_hdr->hln = ETHER_ADDR_LEN;
+			new_arp_hdr->pln = 4; //TODO: Find global constant if it exists
+			new_arp_hdr->ar_op = arp_op_request;
+			new_arp_hdr->ar_tha = 0;
+			new_arp_hdr->ar_tip = target_ip;
+			
+			
+			while (currIface != NULL) {
+				new_ether_hdr->ether_shost = currIface->addr;
+				new_arp_hdr->ar_sha = currIface->addr;
+				new_arp_hdr->ar_sip = currIface->ip;
+				
+				sr_send_packet(sr, broadcast_packet, new_pkt_len, currIface);
+				
+				currIface = currIface->next;
+			}
 			now = time(NULL);
 			req->sent = now;
 			req->times_sent++;
+			free(broadcast_packet);
 		}
 	}
 }
@@ -80,10 +138,11 @@ void handle_arpreq(struct sr_arpcache *cache, struct sr_arpreq* req){
   See the comments in the header file for an idea of what it should look like.
 */
 void sr_arpcache_sweepreqs(struct sr_instance *sr) {
-    /* Fill this in */
     //Requests are stored as a link list
     struct sr_arpcache *ARPcache = &(sr->cache);
     struct sr_arpreq *currReq = ARPcache->requests;
+    struct sr_arpreq *nextReq;
+
     while (currReq != NULL) {
 		//Save next request pointer in case handle req destroys currReq
 		nextReq = currReq->next;

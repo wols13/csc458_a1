@@ -183,13 +183,34 @@ void print_hdrs(uint8_t *buf, uint32_t length) {
   }
 }
 
-//Helper function: give individual portions of an ip address, return the uint32 representation of it
-uint32_t IPtoUint32(int seq1, int seq2, int seq3, int seq4) {
-    uint32_t result = 0;
-    result = seq1 << 24;
-    result = result | (seq2<<16);
-    result = result | (seq3<<8);
-    result = result | (seq4);
-
-    return result;
+	//Longest prefix match: the mask means how many bits to take into account
+	//IP numbers are kept as 4 sequences of 8 bit values
+	//Use NOT XOR to determine matching bits
+struct sr_if* longestPrefixMatch(struct sr_instance* sr, uint32_t ip) {
+	struct sr_if *currIface = sr->if_list;
+	struct sr_if *currLongestMatchIface;
+	uint32_t currentMatchedBits, currLMMatchedBits = 0;
+	
+	//For each interface we have, check its prefix bits and determine which
+	//One has the longest match with the provided IP	
+	while (currIface != NULL) {
+		currentMatchedBits = 0;
+		//For each bit location, check if the interface's IP matches the given IP
+		for (int i = 31; i >= 7; i--) {
+			//Bit shift so we only get the bit of the location we care about
+			if (((currIface->ip << 31 - i) >> i) & ((ip << 31 - i) >> i)) {
+				currentMatchedBits++;
+			} else {
+				break;
+			}
+		}
+				
+		//Updates longest match if a longer match has been found
+		if (currentMatchedBits > currLMMatchedBits) {
+			currLongestMatchIface = currIface;
+			currLMMatchedBits = currentMatchedBits;
+		}
+		currIface = currIface->next;
+	}
+	return currLongestMatchIface;
 }

@@ -47,6 +47,7 @@ void sr_init(struct sr_instance* sr)
     pthread_create(&thread, &(sr->attr), sr_arpcache_timeout, sr);
 
     /* Add initialization code here! */
+    //TODO BIG BIG BIG TODO: Maybe?  MAYBE?!!?
 
 } /* -- sr_init -- */
 
@@ -83,15 +84,13 @@ void sr_handlepacket(struct sr_instance* sr,
   struct sr_if* currInterface = 0;
   struct sr_arpentry* ARPentry = 0;
   struct sr_arpreq* ARPreq = 0;
-  uint32_t nexthopIP;
-  char *nextiface;
+  struct sr_if *nexthopIface;
   uint16_t tempChecksum;
 
 
-  /* fill in code here */
   //Check len meets minimum size
   if (len < sizeof(struct sr_ethernet_hdr) ){
-	//Send ICMP reply to sender of type 12 code 2 (Bad length)
+	//TODO: Send ICMP reply to sender of type 12 code 2 (Bad length)
 	fprintf(stderr , "** Error: packet is wayy to short \n");
     return -1;
   }
@@ -100,28 +99,19 @@ void sr_handlepacket(struct sr_instance* sr,
   ether_hdr = (struct sr_ethernet_hdr*)packet;
 
   //Need to check if it contains an ARP or IP packet
-  //if (ether_hdr->ether_type == ethertype_ip) {
-  
   if (ether_hdr->ether_type == ethertype_arp) {
-		hand_arpIncomingMessage(packet, sr);
+		handle_arpIncomingMessage(packet, sr, len);
 		return 0;
   }
   
 	//Extract IP header
 	ip_hdr = packet + sizeof(struct sr_ether_hdr);
 
-	//Check IP packet+header size meets minimum size
-	if (len - sizeof(struct sr_ethernet_hdr) < sizeof(struct sr_ip_hdr) ){
-		//Send ICMP reply to sender of type 12 code 2 (Bad length)
-		fprintf(stderr , "** Error: IP packet is wayy to short \n");
-		return -1;
-	}
-
 	//validate checksum
 	tempChecksum = ip_hdr->ip_sum;
 	ip_hdr->ip_sum = 0;
 	if (tempChecksum != cksum(ip_hdr, ip_hdr->ip_len)) {
-		//Send ICMP reply to sender of type _ code _
+		//TODO: Send ICMP reply to sender of type _ code _
 		fprintf(stderr , "** Error: checksum mismatch \n");
 		return -1;
 	}
@@ -131,7 +121,7 @@ void sr_handlepacket(struct sr_instance* sr,
 
 	//Check if TTL = 0 and handle
 	if (ip_hdr->ip_ttl < 1) {
-		//Send ICMP reply to sender type 11 code 0
+		//TODO: Send ICMP reply to sender type 11 code 0
 		fprintf(stderr , "** Packet's TTL is 0 \n");
 		return -1;
 	}
@@ -140,55 +130,31 @@ void sr_handlepacket(struct sr_instance* sr,
 	tempChecksum = cksum(ip_hdr, ip_hdr->ip_len);
 	ip_hdr->ip_sum = tempChecksum;
 
-	//See if dest ip is one of our interfaces.  If it does, send it out through that interface
+	//See if dest ip is one of our interfaces.  If it IS, send it out through that interface
 	currInterface = sr->if_list;
 	while (currInterface != NULL) {
 		//This checks if the interface ip is the same as the dest ip in the packet header
 		if (currInterface->ip == ip_hdr->ip_dst) {
-			//Send it through that interface
-			//exit
+			//TODO: Send it through that interface
+			return 0;
 		}
 		currInterface = currInterface->next;
 	}
 
 	//Otherwise find longest prefix match (through routing table) and send it there
-	// Router struct has a pointer to first routing table entry.  Each router table entry has a pointer
-	// to the next (it's a linked list).  We can compare the ip packet's destination to each entry
-	//Until we hit next is NULL
+	nexthopIface = longestPrefixMatch(sr, ip_hdr->ip_dst);
 
 
-	if ((ip_hdr->ip_dst >> 24) == 192) {
-		//forward packet to eth1
-		nexthopIP = IPtoUint32(192, 168, 2, 2);
-		nextiface = "eth1";
-	} else if  ((ip_hdr->ip_dst >> 24) == 172){
-		//forward packet to eth2
-		nexthopIP = IPtoUint32(172, 64, 3, 10);
-		nextiface = "eth2";
-	} else if  ((ip_hdr->ip_dst >> 24) == 10){
-		//forward packet to eth3
-		nexthopIP = IPtoUint32(10, 0, 1, 100);
-		nextiface = "eth0";
-	} else {
-		//exit
-	}
-
-	ARPentry = sr_arpcache_lookup(&(sr->cache), nexthopIP);
+	ARPentry = sr_arpcache_lookup(&(sr->cache), nexthopIface->ip);
 	//MAC Address = ARPentry->mac;
 	if (ARPentry != NULL) {
-		//send it
-		//free(ARPentry); potentially relink
+		//TODO: send it
+		//TODO: free(ARPentry); potentially relink
 	} else {
 		//Add a ARP request onto the ARP request queue
-		ARPreq = sr_arpcache_queuereq(&(sr->cache),
-							 nexthopIP,
-							 packet,
-							 len,
-							 nextiface);
+		ARPreq = sr_arpcache_queuereq(&(sr->cache), nexthopIface->ip, packet, len, nexthopIface->name);
 		//Write and call handle_arpreq
-		handle_arpreq(&(sr->cache), ARPreq);
-
+		handle_arpreq(sr, ARPreq, nexthopIface->ip);
 	}
-
 
 }/* end sr_ForwardPacket */
