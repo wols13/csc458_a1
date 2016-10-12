@@ -106,9 +106,9 @@ struct sr_arpcache {
     pthread_mutexattr_t attr;
 };
 
-void hand_arpIncomingMessage(struct sr_packet *packet, struct sr_instance *sr);
+void handle_arpIncomingMessage(struct sr_packet *packet, struct sr_instance *sr, unsigned int len);
 
-void handle_arpreq(struct sr_arpcache *cache, struct sr_arpreq* req);
+void handle_arpreq(struct sr_instance *sr, struct sr_arpreq* req, uint32_t target_ip);
 
 /* Checks if an IP->MAC mapping is in the cache. IP is in network byte order. 
    You must free the returned structure if it is not NULL. */
