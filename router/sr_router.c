@@ -67,7 +67,7 @@ void sr_init(struct sr_instance* sr)
  *
  *---------------------------------------------------------------------*/
 
-void sr_handlepacket(struct sr_instance* sr,
+int sr_handlepacket(struct sr_instance* sr,
         uint8_t * packet/* lent */,
         unsigned int len,
         char* interface/* lent */)
@@ -90,7 +90,8 @@ void sr_handlepacket(struct sr_instance* sr,
 
   //Check len meets minimum size
   if (len < sizeof(struct sr_ethernet_hdr) ){
-	//TODO: Send ICMP reply to sender of type 12 code 2 (Bad length)
+	//Send ICMP reply to sender of type 12 code 2 (Bad length)
+	create_send_icmpMessage(sr, packet, 12, 2, interface);
 	fprintf(stderr , "** Error: packet is wayy to short \n");
     return -1;
   }
@@ -111,7 +112,7 @@ void sr_handlepacket(struct sr_instance* sr,
 	tempChecksum = ip_hdr->ip_sum;
 	ip_hdr->ip_sum = 0;
 	if (tempChecksum != cksum(ip_hdr, ip_hdr->ip_len)) {
-		//TODO: Send ICMP reply to sender of type _ code _
+		//Drop the packet
 		fprintf(stderr , "** Error: checksum mismatch \n");
 		return -1;
 	}
@@ -121,7 +122,8 @@ void sr_handlepacket(struct sr_instance* sr,
 
 	//Check if TTL = 0 and handle
 	if (ip_hdr->ip_ttl < 1) {
-		//TODO: Send ICMP reply to sender type 11 code 0
+		//Send ICMP reply to sender type 11 code 0
+		create_send_icmpMessage(sr, packet, 11, 0, interface);
 		fprintf(stderr , "** Packet's TTL is 0 \n");
 		return -1;
 	}
@@ -130,12 +132,13 @@ void sr_handlepacket(struct sr_instance* sr,
 	tempChecksum = cksum(ip_hdr, ip_hdr->ip_len);
 	ip_hdr->ip_sum = tempChecksum;
 
-	//See if dest ip is one of our interfaces.  If it IS, send it out through that interface
+	//See if dest ip is one of our interfaces. If it IS, send it out through that interface
 	currInterface = sr->if_list;
 	while (currInterface != NULL) {
 		//This checks if the interface ip is the same as the dest ip in the packet header
 		if (currInterface->ip == ip_hdr->ip_dst) {
-			//TODO: Send it through that interface
+			// If it is destined for us, then send an ICMP echo  
+			create_send_icmpMessage(sr, packet, 0, 0, interface);
 			return 0;
 		}
 		currInterface = currInterface->next;
@@ -143,13 +146,21 @@ void sr_handlepacket(struct sr_instance* sr,
 
 	//Otherwise find longest prefix match (through routing table) and send it there
 	nexthopIface = longestPrefixMatch(sr, ip_hdr->ip_dst);
+	if (!nexthopIface) {
+		//Send destination unreachable type 3 code 0 (Net unreachable)
+		create_send_icmpMessage(sr, packet, 3, 0, interface);
+		fprintf(stderr , "** Error: No prefix match! \n");
+		return -1;
+	}
 
 
 	ARPentry = sr_arpcache_lookup(&(sr->cache), nexthopIface->ip);
-	//MAC Address = ARPentry->mac;
 	if (ARPentry != NULL) {
-		//TODO: send it
-		//TODO: free(ARPentry); potentially relink
+		//MAC Address = ARPentry->mac;
+		ether_hdr->ether_dhost = ARPentry->mac;
+		ether_hdr->ether_shost = nexthopIface->addr;
+		sr_send_packet(sr, packet, len, nexthopIface->name);
+		free(ARPentry);
 	} else {
 		//Add a ARP request onto the ARP request queue
 		ARPreq = sr_arpcache_queuereq(&(sr->cache), nexthopIface->ip, packet, len, nexthopIface->name);

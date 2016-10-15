@@ -30,6 +30,12 @@ void handle_arpIncomingMessage(uint8_t *packet, struct sr_instance *sr, unsigned
 			//forward all packets from the req's queue on to that destination
 			while (pendingPkt != NULL) {
 				//CHECK: that it sends (FOR DEBUG PURPOSES)
+				//Change ethernet addresses
+				struct sr_ethernet_hdr* pendingEtherHeader = (struct sr_ethernet_hdr*)pendingPkt->buf;
+				memcpy(pendingEtherHeader->ether_dhost, arp_hdr->arp_sha, ETHER_ADDR_LEN * sizeof(uint8_t));
+				struct sr_if* pendingIface = sr_get_interface(sr, pendingPkt->currIface);
+				memcpy(pendingEtherHeader->ether_shost, pendingIface->addr, ETHER_ADDR_LEN * sizeof(uint8_t));
+				
 				sr_send_packet(sr, pendingPkt->buf, pendingPkt->len, pendingPkt->currIface);
 				pendingPkt = pendingPkt->next;
 			}
@@ -89,7 +95,8 @@ void handle_arpreq(struct sr_instance *sr, struct sr_arpreq* req, uint32_t targe
 		if (req->times_sent >= 5) {
 			packet = req->packets;			
 			while (packets != NULL) {
-				//TODO: send ICMP host unreachable type 3 code 1 to source addresses of all packets waiting on this request
+				//Send type 3 code 1 ICMP (Host Unreachable)
+				create_send_icmpMessage(sr, packet, 3, 1, packet->iface);
 				packet = packet->next;
 			}
 			//Destroy the request afterwards

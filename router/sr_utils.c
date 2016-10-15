@@ -188,7 +188,7 @@ void print_hdrs(uint8_t *buf, uint32_t length) {
 	//Use NOT XOR to determine matching bits
 struct sr_if* longestPrefixMatch(struct sr_instance* sr, uint32_t ip) {
 	struct sr_if *currIface = sr->if_list;
-	struct sr_if *currLongestMatchIface;
+	struct sr_if *currLongestMatchIface = NULL;
 	uint32_t currentMatchedBits, currLMMatchedBits = 0;
 	
 	//For each interface we have, check its prefix bits and determine which
@@ -213,4 +213,63 @@ struct sr_if* longestPrefixMatch(struct sr_instance* sr, uint32_t ip) {
 		currIface = currIface->next;
 	}
 	return currLongestMatchIface;
+}
+
+void create_send_icmpMessage(struct sr_instance* sr, uint8_t* packet, uint8_t type, uint8_t code, const char* iface) {
+	uint8_t* ICMPpacket = 0;
+	unsigned int new_pkt_len;
+	unsigned int ethernetPlusIPheaderLength = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr);
+	uint8_t tempDestMac = 0;
+	uint32_t tempDestIP = 0;
+	
+	if (type != 3) {
+		new_pkt_len = ethernetPlusIPheaderLength + sizeof(struct sr_icmp_hdr);
+		ICMPpacket = malloc(new_pkt_len);
+		struct sr_icmp_hdr *ICMPheader = (struct sr_icmp_hdr*)(ICMPpacket + ethernetPlusIPheaderLength);
+	} else {
+		new_pkt_len = ethernetPlusIPheaderLength + sizeof(struct sr_icmp_t3_hdr);
+		ICMPpacket = malloc(new_pkt_len);
+		struct sr_icmp_t3_hdr *ICMPheader = (struct sr_icmp_t3_hdr*)(ICMPpacket + ethernetPlusIPheaderLength);
+		ICMPheader->unused = 0;
+		ICMPheader->next_mtu = 68;
+		
+		int dataLen = ((struct sr_ip_hdr*)(packet + sizeof(struct sr_ethernet_hdr))->ip_len) - 20;
+		if (dataLen > 8) {
+			dataLen = 8;
+		}
+		
+		memcpy(ICMPheader->data, packet + sizeof(struct sr_ethernet_hdr), sizeof(struct sr_ip_hdr));
+		memcpy(ICMPheader->data + sizeof(struct sr_ip_hdr), (packet + ethernetPlusIPheaderLength), dataLen);
+		
+	}
+	
+	ICMPheader->type = type;
+	ICMPheader->code = code;
+	ICMPheader->sum = 0;
+	ICMPheader->sum = cksum(ICMPheader, new_pkt_len - ethernetPlusIPheaderLength);
+	
+	//Change IP header dest/source IP and then checksum
+	struct sr_ip_hdr *IPheader = (struct sr_ip_hdr*)(ICMPpacket + sizeof(sr_ethernet_hdr));
+	memcpy(IPheader, packet + sizeof(struct sr_ethernet_hdr), sizeof(struct sr_ip_hdr);
+	tempDestIP = IPheader->ip_src;
+	IPheader->ip_src = IPheader->ip_dst;
+	IPheader->ip_dst = tempDestIP;
+	IPheader->ip_ttl = 70;
+	IPheader->ip_len = new_pkt_len - sizeof(struct sr_ethernet_hdr);
+	IPheader->ip_p = ip_protocol_icmp;
+	IPheader->ip_sum = 0;
+	IPheader->ip_sum = cksum(IPheader, sizeof(struct sr_ip_hdr));
+	
+	
+	//Change Ethernet MAC addresses
+	struct sr_ethernet_hdr *EthHeader = (struct sr_ethernet_hdr*)ICMPpacket;
+	memcpy(EthHeader, packet, sizeof(struct sr_ethernet_hdr);
+	tempDestMac = EthHeader->ether_dhost;
+	EthHeader->ether_dhost = EthHeader->ether_shost;
+	EthHeader->ether_shost = tempDestMac;
+	EthHeader->ether_type = ethertype_ip;
+			
+	sr_send_packet(sr, ICMPpacket, new_pkt_len, iface);
+			
+	free(ICMPpacket);
 }
