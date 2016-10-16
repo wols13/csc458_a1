@@ -28,6 +28,8 @@
 #ifndef SR_UTILS_H
 #define SR_UTILS_H
 
+#include "sr_if.h"
+
 uint16_t cksum(const void *_data, int len);
 
 uint16_t ethertype(uint8_t *buf);
@@ -45,7 +47,7 @@ void print_hdr_arp(uint8_t *buf);
 /* prints all headers, starting from eth */
 void print_hdrs(uint8_t *buf, uint32_t length);
 
-struct sr_if* longestPrefixMatch(struct sr_instance* sr, uint32_t ip);
-void create_send_icmpMessage(struct sr_instance* sr, uint8_t* packet, uint8_t type, uint8_t code, const char* iface);
+struct sr_if* longestPrefixMatch(struct sr_instance *sr, uint32_t ip);
+void create_send_icmpMessage(struct sr_instance *sr, uint8_t *packet, uint8_t type, uint8_t code, const char *iface);
 
 #endif /* -- SR_UTILS_H -- */
