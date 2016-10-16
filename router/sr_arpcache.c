@@ -24,7 +24,7 @@ void handle_arpIncomingMessage(uint8_t *packet, struct sr_instance *sr, unsigned
 	struct sr_arpreq *req;
 	
 	/* Extract ARP header */
-	arp_hdr = (struct sr_arp_hdr*) packet + sizeof(struct sr_ethernet_hdr);
+	arp_hdr = (struct sr_arp_hdr*)(packet + sizeof(struct sr_ethernet_hdr));
 		
 	/* Check to see if reply or request */
 	if (arp_hdr->ar_op == arp_op_reply) {
