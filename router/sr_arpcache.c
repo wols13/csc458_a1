@@ -1,11 +1,11 @@
 #include <netinet/in.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sched.h>
 #include <string.h>
-#include <stdlib.h>
 #include "sr_arpcache.h"
 #include "sr_router.h"
 #include "sr_if.h"
@@ -16,7 +16,7 @@
  * 	Depending on whether it's a reply or a request, handle it differently.
  */
  
-void handle_arpIncomingMessage(uint8_t **packet, struct sr_instance *sr, unsigned int len) {
+void handle_arpIncomingMessage(uint8_t *packet, struct sr_instance *sr, unsigned int len) {
 	/* NOTE TO USE THE ETHERNET PROTOCOL ENUM FOR ARP messages AND also in ARP header to denote it's an ARP reply */	
 	struct sr_if *currIface;
 	struct sr_packet *pendingPkt;
@@ -24,10 +24,10 @@ void handle_arpIncomingMessage(uint8_t **packet, struct sr_instance *sr, unsigne
 	struct sr_arpreq *req;
 	
 	/* Extract ARP header */
-	arp_hdr = (struct sr_arp_hdr*)(*packet + sizeof(struct sr_ethernet_hdr));
+	arp_hdr = (struct sr_arp_hdr*)(packet + sizeof(struct sr_ethernet_hdr));
 		
 	/* Check to see if reply or request */
-	if (ntohs(arp_hdr->ar_op) == arp_op_reply) {
+	if (arp_hdr->ar_op == arp_op_reply) {
 		req = sr_arpcache_insert(&(sr->cache), arp_hdr->ar_sha, arp_hdr->ar_sip); /* Sender's ip and mac */
 		if (req){ 
 			pendingPkt = req->packets;
@@ -50,29 +50,21 @@ void handle_arpIncomingMessage(uint8_t **packet, struct sr_instance *sr, unsigne
 		/* Go through linked list of interfaces, check their IP vs the destination IP of the ARP request packet */
 		currIface = sr->if_list;
 		while (currIface != NULL) {
-			/* printf("%d\n", (currIface->ip >> 3));
-			printf("%d\n\n", ntohl(arp_hdr->ar_tha)); */
 			/* Check if packet is intended for us */
 			if (currIface->ip == arp_hdr->ar_tip) {
 				/* Create ARP reply packet (encapsulate in ethernet frame) and send to source of ARP request */
-				struct sr_ethernet_hdr *ether_hdr = (struct sr_ethernet_hdr*)*packet;
-				uint8_t *new_packet = (uint8_t *)malloc(sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr));
-				struct sr_ethernet_hdr *new_ether_hdr = (struct sr_ethernet_hdr*)new_packet;
-				struct sr_arp_hdr *new_arp_hdr = (struct sr_arp_hdr*)(new_packet + sizeof(struct sr_ethernet_hdr));
-
+				struct sr_ethernet_hdr* ether_hdr = (struct sr_ethernet_hdr*)packet;
 				/* The recipient MAC address will be the original sender's */
-				memcpy(new_ether_hdr, ether_hdr, sizeof(struct sr_ethernet_hdr)); 
-				memcpy(new_ether_hdr->ether_dhost, ether_hdr->ether_shost, ETHER_ADDR_LEN);
+				memcpy(&ether_hdr->ether_dhost, &ether_hdr->ether_shost, ETHER_ADDR_LEN);
 				/* The sending MAC address will be the interface's */
-				memcpy(&(new_ether_hdr->ether_shost), &(currIface->addr), ETHER_ADDR_LEN);
-				memcpy(new_arp_hdr, arp_hdr, sizeof(struct sr_arp_hdr));
-				new_arp_hdr->ar_op = htons(arp_op_reply);
-				new_arp_hdr->ar_tip = arp_hdr->ar_sip;
-				new_arp_hdr->ar_sip = currIface->ip;
-				memcpy(new_arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
-				memcpy(new_arp_hdr->ar_sha, currIface->addr, ETHER_ADDR_LEN);
-
-				sr_send_packet(sr, new_packet, len, currIface->name);
+				memcpy(&ether_hdr->ether_shost, currIface->addr, ETHER_ADDR_LEN);
+				arp_hdr->ar_op = arp_op_reply;
+				arp_hdr->ar_tip = arp_hdr->ar_sip;
+				arp_hdr->ar_sip = currIface->ip;
+				memcpy(&arp_hdr->ar_tha, &arp_hdr->ar_sha, ETHER_ADDR_LEN);
+				memcpy(&arp_hdr->ar_sha, currIface->addr, ETHER_ADDR_LEN);
+				
+				sr_send_packet(sr, packet, len, currIface->name);
 				break;
 			}
 			currIface = currIface->next;
@@ -120,27 +112,26 @@ void handle_arpreq(struct sr_instance *sr, struct sr_arpreq* req){
 			struct sr_ethernet_hdr* new_ether_hdr = (struct sr_ethernet_hdr*)broadcast_packet;
 			struct sr_arp_hdr* new_arp_hdr = (struct sr_arp_hdr*)(broadcast_packet + sizeof(struct sr_ethernet_hdr));
 			memset(&new_ether_hdr->ether_dhost, 0xff, ETHER_ADDR_LEN);
-			new_ether_hdr->ether_type = ntohs(ethertype_arp);
+			new_ether_hdr->ether_type = ethertype_arp;
 			
 			currIface = sr->if_list;
 			
-			new_arp_hdr->ar_hrd = ntohs(arp_hrd_ethernet);
-			new_arp_hdr->ar_pro = ntohs(ethertype_ip);
+			new_arp_hdr->ar_hrd = arp_hrd_ethernet;
+			new_arp_hdr->ar_pro = ethertype_ip;
 			new_arp_hdr->ar_hln = ETHER_ADDR_LEN;
 			new_arp_hdr->ar_pln = 4; /* TODO: Find global constant if it exists */
-			new_arp_hdr->ar_op =  ntohs(arp_op_request);
+			new_arp_hdr->ar_op = arp_op_request;
 			memset(&new_arp_hdr->ar_tha, 0, ETHER_ADDR_LEN);
 			new_arp_hdr->ar_tip = req->ip;
-			/* printf("TARGET IP: ");
-			print_addr_ip_int(ntohl(new_arp_hdr->ar_tip)); */			
+			
 			
 			while (currIface != NULL) {
 				memcpy(&new_ether_hdr->ether_shost, currIface->addr, ETHER_ADDR_LEN);
 				memcpy(&new_arp_hdr->ar_sha, currIface->addr, ETHER_ADDR_LEN);
 				new_arp_hdr->ar_sip = currIface->ip;
-
+				
 				sr_send_packet(sr, broadcast_packet, new_pkt_len, currIface->name);
-
+				
 				currIface = currIface->next;
 			}
 			now = time(NULL);
