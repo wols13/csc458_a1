@@ -4,6 +4,7 @@
 #include "sr_protocol.h"
 #include "sr_utils.h"
 #include "sr_router.h"
+#include "sr_rt.h"
 
 
 uint16_t cksum (const void *_data, int len) {
@@ -195,12 +196,19 @@ struct sr_if* longestPrefixMatch(struct sr_instance *sr, uint32_t ip) {
 	/* For each interface we have, check its prefix bits and determine which
 	One has the longest match with the provided IP */	
 	while (currIface != NULL) {
+		printf("11");
 		currentMatchedBits = 0;
+		if ((ip >> 24) == (ntohl(currIface->ip) >> 24)){
+			printf("ZZZ");
+			return currIface;
+		}
 		/* For each bit location, check if the interface's IP matches the given IP */
 		
 		for (i = 31; i >= 7; i--) {
+			printf("22");
 			/* Bit shift so we only get the bit of the location we care about */
-			if (((currIface->ip << (31 - i) >> i) & ((ip << (31 - i)) >> i))) {
+			if (((ntohl(currIface->ip) << (31 - i)) >> i) & ((ip << (31 - i)) >> i)) {
+				printf("33\n");
 				currentMatchedBits++;
 			} else {
 				break;
@@ -209,6 +217,7 @@ struct sr_if* longestPrefixMatch(struct sr_instance *sr, uint32_t ip) {
 				
 		/* Updates longest match if a longer match has been found */
 		if (currentMatchedBits > currLMMatchedBits) {
+			printf("44\n");
 			currLongestMatchIface = currIface;
 			currLMMatchedBits = currentMatchedBits;
 		}
@@ -284,4 +293,16 @@ void create_send_icmpMessage(struct sr_instance *sr, uint8_t *packet, uint8_t ty
 	sr_send_packet(sr, ICMPpacket, new_pkt_len, iface);
 			
 	free(ICMPpacket);
+}
+
+uint32_t ip_behind_interface(struct sr_instance *sr, struct sr_if *if_ip) {
+	struct sr_rt* currentRTEntry = sr->routing_table;
+
+	while (currentRTEntry) {
+		if(strncmp(currentRTEntry->interface, if_ip->name, sr_IFACE_NAMELEN) == 0){
+			return currentRTEntry->dest.s_addr;
+		}
+		currentRTEntry = currentRTEntry->next;
+	}
+	return if_ip->ip;
 }

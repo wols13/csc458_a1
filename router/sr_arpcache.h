@@ -148,7 +148,7 @@ int   sr_arpcache_init(struct sr_arpcache *cache);
 int   sr_arpcache_destroy(struct sr_arpcache *cache);
 void *sr_arpcache_timeout(void *cache_ptr);
 
-void handle_arpIncomingMessage(uint8_t *packet, struct sr_instance *sr, unsigned int len);
+void handle_arpIncomingMessage(uint8_t **packet, struct sr_instance *sr, unsigned int len);
 
 void handle_arpreq(struct sr_instance *sr, struct sr_arpreq* req);
 
