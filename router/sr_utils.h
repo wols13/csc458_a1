@@ -49,5 +49,6 @@ void print_hdrs(uint8_t *buf, uint32_t length);
 
 struct sr_if* longestPrefixMatch(struct sr_instance *sr, uint32_t ip);
 void create_send_icmpMessage(struct sr_instance *sr, uint8_t *packet, uint8_t type, uint8_t code, const char *iface);
+uint32_t ip_behind_interface(struct sr_instance *sr, struct sr_if *if_ip);
 
 #endif /* -- SR_UTILS_H -- */
