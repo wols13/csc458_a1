@@ -86,10 +86,9 @@ int sr_handlepacket(struct sr_instance* sr,
   struct sr_arpentry* ARPentry = 0;
   struct sr_arpreq* ARPreq = 0;
   struct sr_if *nexthopIface;
-  uint16_t tempChecksum; 
+  uint16_t tempChecksum;
 
-  print_hdrs(packet, len);
-  printf("A\n");
+
   /* Check len meets minimum size */
   if (len < sizeof(struct sr_ethernet_hdr) ){
 	/* Send ICMP reply to sender of type 12 code 2 (Bad length) */
@@ -97,68 +96,48 @@ int sr_handlepacket(struct sr_instance* sr,
 	fprintf(stderr , "** Error: packet is wayy to short \n");
     return -1;
   }
-  printf("B\n");
+
   /* Extract ethernet header */
   ether_hdr = (struct sr_ethernet_hdr*)packet;
 
-  printf("C\n");
-  /* Extract ethernet header */
   /* Need to check if it contains an ARP or IP packet */
-  if (ntohs(ether_hdr->ether_type) == ethertype_arp) {
-		handle_arpIncomingMessage(&packet, sr, len);
+  if (ether_hdr->ether_type == ethertype_arp) {
+		handle_arpIncomingMessage(packet, sr, len);
 		return 0;
   }
   
-  printf("D\n");
-  /* Extract ethernet header */
 	/* Extract IP header */
 	ip_hdr = (struct sr_ip_hdr*)(packet + sizeof(struct sr_ethernet_hdr));
 
-  printf("E\n");
-  /* Extract ethernet header */
 	/* validate checksum */
 	tempChecksum = ip_hdr->ip_sum;
 	ip_hdr->ip_sum = 0;
-	if (tempChecksum != cksum(ip_hdr, sizeof(struct sr_ip_hdr))) {
+	if (tempChecksum != cksum(ip_hdr, ip_hdr->ip_len)) {
 		/* Drop the packet */
 		fprintf(stderr , "** Error: checksum mismatch \n");
 		return -1;
 	}
 
-  printf("F\n");
-  /* Extract ethernet header */
 	/* Decrement TTL */
 	(ip_hdr->ip_ttl)--;
 
-  printf("G\n");
-  /* Extract ethernet header */
 	/* Check if TTL = 0 and handle */
 	if (ip_hdr->ip_ttl < 1) {
-		printf("ttl out\n");
 		/* Send ICMP reply to sender type 11 code 0 */
 		create_send_icmpMessage(sr, packet, 11, 0, interface);
 		fprintf(stderr , "** Packet's TTL is 0 \n");
 		return -1;
 	}
 
-  printf("H\n");
-  /* Extract ethernet header */
 	/* Recalculate checksum here */
-	tempChecksum = cksum(ip_hdr, sizeof(struct sr_ip_hdr));
+	tempChecksum = cksum(ip_hdr, ip_hdr->ip_len);
 	ip_hdr->ip_sum = tempChecksum;
 
-  printf("I\n");
-  /* Extract ethernet header */
 	/* See if dest ip is one of our interfaces. If it IS, send it out through that interface */
 	currInterface = sr->if_list;
 	while (currInterface != NULL) {
 		/* This checks if the interface ip is the same as the dest ip in the packet header */
-  printf("J\n");
-  /* Extract ethernet header */
 		if (currInterface->ip == ip_hdr->ip_dst) {
-			printf("EXACT MATCH\n");
-  printf("K\n");
-  /* Extract ethernet header */
 			/*  If it is destined for us, then send an ICMP echo  */
 			create_send_icmpMessage(sr, packet, 0, 0, interface);
 			return 0;
@@ -166,33 +145,18 @@ int sr_handlepacket(struct sr_instance* sr,
 		currInterface = currInterface->next;
 	}
 
-  printf("L\n");
-  /* Extract ethernet header */
 	/* Otherwise find longest prefix match (through routing table) and send it there */
-	nexthopIface = longestPrefixMatch(sr, ntohl(ip_hdr->ip_dst));
-  printf("L1\n");
-	print_addr_ip_int(ntohl(nexthopIface->ip));
-  printf("L2\n");
+	nexthopIface = longestPrefixMatch(sr, ip_hdr->ip_dst);
 	if (!nexthopIface) {
-  printf("L3\n");
-		printf("shoudlnt be here\n");
-  printf("L4\n");
 		/* Send destination unreachable type 3 code 0 (Net unreachable) */
 		create_send_icmpMessage(sr, packet, 3, 0, interface);
-  printf("L5\n");
 		fprintf(stderr , "** Error: No prefix match! \n");
-  printf("L6\n");
 		return -1;
 	}
 
 
-  printf("M\n");
-  /* Extract ethernet header */
 	ARPentry = sr_arpcache_lookup(&(sr->cache), nexthopIface->ip);
 	if (ARPentry != NULL) {
-		printf("gotcha\n");
-  printf("N\n");
-  /* Extract ethernet header */
 		/* MAC Address = ARPentry->mac; */
 		memcpy(&ether_hdr->ether_dhost, ARPentry->mac, ETHER_ADDR_LEN);
 		memcpy(&ether_hdr->ether_shost, nexthopIface->name, ETHER_ADDR_LEN);
@@ -201,9 +165,7 @@ int sr_handlepacket(struct sr_instance* sr,
 		free(ARPentry);
 	} else {
 		/* Add a ARP request onto the ARP request queue */
-		ARPreq = sr_arpcache_queuereq(&(sr->cache), ip_behind_interface(sr, nexthopIface), packet, len, nexthopIface->name);
-  printf("P\n");
-  /* Extract ethernet header */
+		ARPreq = sr_arpcache_queuereq(&(sr->cache), nexthopIface->ip, packet, len, nexthopIface->name);
 		/* Write and call handle_arpreq */
 		handle_arpreq(sr, ARPreq);
 	}
