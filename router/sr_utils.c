@@ -266,7 +266,7 @@ void create_send_icmpMessage(struct sr_instance *sr, uint8_t *packet, unsigned i
 	struct sr_ip_hdr *IPheader = (struct sr_ip_hdr*)(ICMPpacket + sizeof(struct sr_ethernet_hdr));
 	memcpy(IPheader, packet + sizeof(struct sr_ethernet_hdr), sizeof(struct sr_ip_hdr));
 	tempDestIP = IPheader->ip_src;
-	IPheader->ip_src = IPheader->ip_dst;
+	IPheader->ip_src = (sr_get_interface(sr, iface))->ip;
 	IPheader->ip_dst = tempDestIP;
 	IPheader->ip_ttl = 64;
 	IPheader->ip_len = ntohs(full_pkt_len - sizeof(struct sr_ethernet_hdr));
