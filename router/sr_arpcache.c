@@ -108,7 +108,7 @@ void handle_arpreq(struct sr_instance *sr, struct sr_arpreq* req){
 			packet = req->packets;			
 			while (packet != NULL) {
 				/* Send type 3 code 1 ICMP (Host Unreachable) */
-				create_send_icmpMessage(sr, packet->buf, 3, 1, packet->iface);
+				create_send_icmpMessage(sr, packet->buf, 0, 3, 1, packet->iface);
 				packet = packet->next;
 			}
 			/* Destroy the request afterwards */

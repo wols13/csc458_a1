@@ -93,7 +93,7 @@ int sr_handlepacket(struct sr_instance* sr,
   /* Check len meets minimum size */
   if (len < sizeof(struct sr_ethernet_hdr) ){
 	/* Send ICMP reply to sender of type 12 code 2 (Bad length) */
-	create_send_icmpMessage(sr, packet, 12, 2, interface);
+	create_send_icmpMessage(sr, packet, len, 12, 2, interface);
 	fprintf(stderr , "** Error: packet is wayy to short \n");
     return -1;
   }
@@ -136,7 +136,7 @@ int sr_handlepacket(struct sr_instance* sr,
 	if (ip_hdr->ip_ttl < 1) {
 		printf("ttl out\n");
 		/* Send ICMP reply to sender type 11 code 0 */
-		create_send_icmpMessage(sr, packet, 11, 0, interface);
+		create_send_icmpMessage(sr, packet, len, 11, 0, interface);
 		fprintf(stderr , "** Packet's TTL is 0 \n");
 		return -1;
 	}
@@ -160,7 +160,7 @@ int sr_handlepacket(struct sr_instance* sr,
   printf("K\n");
   /* Extract ethernet header */
 			/*  If it is destined for us, then send an ICMP echo  */
-			create_send_icmpMessage(sr, packet, 0, 0, interface);
+			create_send_icmpMessage(sr, packet, len, 0, 0, interface);
 			return 0;
 		}
 		currInterface = currInterface->next;
@@ -178,7 +178,7 @@ int sr_handlepacket(struct sr_instance* sr,
 		printf("shoudlnt be here\n");
   printf("L4\n");
 		/* Send destination unreachable type 3 code 0 (Net unreachable) */
-		create_send_icmpMessage(sr, packet, 3, 0, interface);
+		create_send_icmpMessage(sr, packet, len, 3, 0, interface);
   printf("L5\n");
 		fprintf(stderr , "** Error: No prefix match! \n");
   printf("L6\n");
