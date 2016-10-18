@@ -39,7 +39,7 @@ void handle_arpIncomingMessage(uint8_t **packet, struct sr_instance *sr, unsigne
 				memcpy(pendingEtherHeader->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN * sizeof(uint8_t));
 				struct sr_if* pendingIface = sr_get_interface(sr, pendingPkt->iface);
 				memcpy(pendingEtherHeader->ether_shost, pendingIface->addr, ETHER_ADDR_LEN * sizeof(uint8_t));
-				
+					
 				sr_send_packet(sr, pendingPkt->buf, pendingPkt->len, pendingPkt->iface);
 				pendingPkt = pendingPkt->next;
 			}
@@ -71,6 +71,8 @@ void handle_arpIncomingMessage(uint8_t **packet, struct sr_instance *sr, unsigne
 				new_arp_hdr->ar_sip = currIface->ip;
 				memcpy(new_arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
 				memcpy(new_arp_hdr->ar_sha, currIface->addr, ETHER_ADDR_LEN);
+
+				print_hdrs(new_packet, len);
 
 				sr_send_packet(sr, new_packet, len, currIface->name);
 				break;

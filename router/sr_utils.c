@@ -189,41 +189,46 @@ void print_hdrs(uint8_t *buf, uint32_t length) {
 	IP numbers are kept as 4 sequences of 8 bit values
 	Use NOT XOR to determine matching bits */
 struct sr_if* longestPrefixMatch(struct sr_instance *sr, uint32_t ip) {
-	struct sr_if *currIface = sr->if_list;
-	struct sr_if *currLongestMatchIface = NULL;
-	uint32_t currentMatchedBits, currLMMatchedBits = 0;
-	int i;
-	/* For each interface we have, check its prefix bits and determine which
-	One has the longest match with the provided IP */	
-	while (currIface != NULL) {
-		printf("11");
-		currentMatchedBits = 0;
-		if ((ip >> 24) == (ntohl(currIface->ip) >> 24)){
-			printf("ZZZ");
-			return currIface;
-		}
-		/* For each bit location, check if the interface's IP matches the given IP */
-		
-		for (i = 31; i >= 7; i--) {
-			printf("22");
-			/* Bit shift so we only get the bit of the location we care about */
-			if (((ntohl(currIface->ip) << (31 - i)) >> i) & ((ip << (31 - i)) >> i)) {
-				printf("33\n");
-				currentMatchedBits++;
-			} else {
+	struct sr_rt *curr_rt_entry = sr->routing_table;
+	struct sr_rt *longest_rt_entry = NULL;
+	int mask_bit_count, i, longestMaskCount = 0;
+
+	printf("1\n");
+	while (curr_rt_entry != NULL) {
+		/* Check mask, figure out how large match must be */
+		for (mask_bit_count = 0; mask_bit_count < 32; mask_bit_count++) {
+			if (!(((curr_rt_entry->mask.s_addr) << mask_bit_count) >> 31)) {
 				break;
 			}
 		}
-				
-		/* Updates longest match if a longer match has been found */
-		if (currentMatchedBits > currLMMatchedBits) {
-			printf("44\n");
-			currLongestMatchIface = currIface;
-			currLMMatchedBits = currentMatchedBits;
+		
+	printf("2\n");
+		/* Take destination ip of entry and compare with input ip using mask */
+		for (i = 0; i < mask_bit_count; i++) {
+			if (!(((curr_rt_entry->dest.s_addr << i) >> 31) == ((ip << i) >> 31))) {
+				break;
+			}
 		}
-		currIface = currIface->next;
+
+	printf("3\n");
+		if (i == mask_bit_count) {
+			/* If mask entry's mask is greater than the previous entry's mask
+			  then it becomes the new longest entry */
+			if (mask_bit_count > longestMaskCount) {
+				longestMaskCount = mask_bit_count;
+				longest_rt_entry = curr_rt_entry;
+			}
+		}
+		curr_rt_entry = curr_rt_entry->next;
 	}
-	return currLongestMatchIface;
+	
+	printf("4\n");
+	if (!longest_rt_entry) {
+		return NULL;
+	}
+	
+	return sr_get_interface(sr, longest_rt_entry->interface);
+
 }
 
 void create_send_icmpMessage(struct sr_instance *sr, uint8_t *packet, unsigned int len, uint8_t type, uint8_t code, const char *iface) {

@@ -169,9 +169,7 @@ int sr_handlepacket(struct sr_instance* sr,
   printf("L\n");
   /* Extract ethernet header */
 	/* Otherwise find longest prefix match (through routing table) and send it there */
-	nexthopIface = longestPrefixMatch(sr, ntohl(ip_hdr->ip_dst));
-  printf("L1\n");
-	print_addr_ip_int(ntohl(nexthopIface->ip));
+	nexthopIface = longestPrefixMatch(sr, ip_hdr->ip_dst);
   printf("L2\n");
 	if (!nexthopIface) {
   printf("L3\n");
@@ -188,7 +186,7 @@ int sr_handlepacket(struct sr_instance* sr,
 
   printf("M\n");
   /* Extract ethernet header */
-	ARPentry = sr_arpcache_lookup(&(sr->cache), nexthopIface->ip);
+	ARPentry = sr_arpcache_lookup(&(sr->cache), ntohl(ip_hdr->ip_dst));
 	if (ARPentry != NULL) {
 		printf("gotcha\n");
   printf("N\n");
